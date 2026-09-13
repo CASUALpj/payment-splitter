@@ -157,13 +157,13 @@ export default function CreateSplitter({ wallet, onCreated }: Props) {
               : total > 0
                 ? 'border-amber-500/30 bg-amber-500/5'
                 : 'border-white/10 bg-white/[0.02]'
-          }`}
+          }`
         >
           <span className="text-sm font-medium text-gray-400">Total allocated</span>
           <span
             className={`font-mono text-sm font-bold ${
               balanced ? 'text-emerald-400' : total > 0 ? 'text-amber-400' : 'text-gray-500'
-            }`}
+            }`
           >
             {total.toFixed(2)}%
           </span>
