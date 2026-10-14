@@ -1,13 +1,15 @@
 import { useState } from 'react';
-import { Loader2, Send, AlertCircle, Search, Coins } from 'lucide-react';
+import { Loader2, Send, AlertCircle, Search, Coins, Calendar, CheckCircle2 } from 'lucide-react';
 import { encodeBytes32String, keccak256, parseEther, parseUnits, toUtf8Bytes } from 'ethers';
 import type { WalletConnection } from '@/lib/wallet';
-import { getSplitterContract, getErc20Contract } from '@/lib/wallet';
+import { getSplitterContract, getErc20Contract, getSplitterReadOnly } from '@/lib/wallet';
 import { NETWORK, shortAddress, explorerAddress } from '@/lib/config';
 
 interface Props {
   wallet: WalletConnection;
 }
+
+type PayMode = 'pay' | 'subscribe';
 
 function toRefId(text: string): string {
   if (!text) return '0x' + '0'.repeat(64);
@@ -20,13 +22,39 @@ function toRefId(text: string): string {
 
 export default function PaySplitter({ wallet }: Props) {
   const [address, setAddress] = useState('');
-  const [mode, setMode] = useState<'eth' | 'token'>('eth');
+  const [mode, setMode] = useState<PayMode>('pay');
+  const [payType, setPayType] = useState<'eth' | 'token'>('eth');
   const [amount, setAmount] = useState('');
   const [tokenAddress, setTokenAddress] = useState('');
   const [refId, setRefId] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [splitterInfo, setSplitterInfo] = useState<{ isSub: boolean; days: number } | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  async function checkSplitter(addr: string) {
+    if (!/^0x[a-fA-F0-9]{40}$/.test(addr.trim())) {
+      setSplitterInfo(null);
+      return;
+    }
+    setChecking(true);
+    try {
+      const c = getSplitterReadOnly(addr.trim(), wallet.provider);
+      const days = await c.subscriptionDurationDays();
+      const isSub = Number(days) > 0;
+      setSplitterInfo({ isSub, days: Number(days) });
+      if (isSub) {
+        setMode('subscribe');
+      } else {
+        setMode('pay');
+      }
+    } catch {
+      setSplitterInfo(null);
+    } finally {
+      setChecking(false);
+    }
+  }
 
   async function handlePay() {
     setError(null);
@@ -36,23 +64,38 @@ export default function PaySplitter({ wallet }: Props) {
       setError('Enter a valid 0x-prefixed splitter address.');
       return;
     }
-    if (!amount || Number(amount) <= 0) {
-      setError('Enter an amount greater than 0.');
-      return;
-    }
 
     setSending(true);
     try {
       const splitter = getSplitterContract(address.trim(), wallet.signer);
       const ref = toRefId(refId);
 
-      if (mode === 'eth') {
+      if (mode === 'subscribe') {
+        if (!amount || Number(amount) <= 0) {
+          setError('Enter an amount to send with your subscription.');
+          setSending(false);
+          return;
+        }
+        const tx = await splitter.subscribe(ref, { value: parseEther(amount) });
+        await tx.wait();
+        setSuccess(tx.hash);
+      } else if (payType === 'eth') {
+        if (!amount || Number(amount) <= 0) {
+          setError('Enter an amount greater than 0.');
+          setSending(false);
+          return;
+        }
         const tx = await splitter.payETH(ref, { value: parseEther(amount) });
         await tx.wait();
         setSuccess(tx.hash);
       } else {
         if (!/^0x[a-fA-F0-9]{40}$/.test(tokenAddress.trim())) {
           setError('Enter a valid token address.');
+          setSending(false);
+          return;
+        }
+        if (!amount || Number(amount) <= 0) {
+          setError('Enter an amount greater than 0.');
           setSending(false);
           return;
         }
@@ -82,8 +125,8 @@ export default function PaySplitter({ wallet }: Props) {
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-white">Pay a Splitter</h2>
         <p className="mt-1 text-sm text-gray-400">
-          Pay into any splitter contract. Funds are distributed to its recipients instantly based on
-          their share percentages.
+          Pay into any splitter contract, or subscribe to a subscription-based splitter. Funds are
+          distributed to recipients proportionally.
         </p>
       </div>
 
@@ -98,50 +141,98 @@ export default function PaySplitter({ wallet }: Props) {
               type="text"
               placeholder="0x... splitter contract address"
               value={address}
-              onChange={(e) => setAddress(e.target.value)}
+              onChange={(e) => {
+                setAddress(e.target.value);
+                checkSplitter(e.target.value);
+              }}
               className="w-full rounded-lg border border-white/10 bg-gray-900/50 py-3 pl-10 pr-3 font-mono text-sm text-white placeholder-gray-600 outline-none transition-colors focus:border-emerald-500/50 focus:bg-gray-900"
             />
           </div>
           {address && /^0x[a-fA-F0-9]{40}$/.test(address) && (
-            <a
-              href={explorerAddress(address)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-1.5 inline-block text-xs text-gray-500 hover:text-emerald-400"
-            >
-              View {shortAddress(address)} on explorer →
-            </a>
+            <div className="mt-1.5 flex items-center gap-2">
+              <a
+                href={explorerAddress(address)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-gray-500 hover:text-emerald-400"
+              >
+                View {shortAddress(address)} on explorer →
+              </a>
+              {checking && <Loader2 className="h-3 w-3 animate-spin text-gray-500" />}
+              {splitterInfo && (
+                <span className={`flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-semibold ${
+                  splitterInfo.isSub
+                    ? 'bg-emerald-500/15 text-emerald-400'
+                    : 'bg-sky-500/15 text-sky-400'
+                }`}>
+                  {splitterInfo.isSub
+                    ? `${splitterInfo.days}d subscription`
+                    : 'one-time only'}
+                </span>
+              )}
+            </div>
           )}
         </div>
 
-        <div className="flex gap-1 rounded-xl border border-white/10 bg-gray-900/50 p-1">
-          <button
-            type="button"
-            onClick={() => setMode('eth')}
-            className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
-              mode === 'eth'
-                ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white'
-                : 'text-gray-400 hover:text-white'
-            }`}
-          >
-            <Send className="h-3.5 w-3.5" />
-            ETH
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode('token')}
-            className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
-              mode === 'token'
-                ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white'
-                : 'text-gray-400 hover:text-white'
-            }`}
-          >
-            <Coins className="h-3.5 w-3.5" />
-            ERC-20
-          </button>
-        </div>
+        {splitterInfo?.isSub && (
+          <div className="flex gap-1 rounded-xl border border-white/10 bg-gray-900/50 p-1">
+            <button
+              type="button"
+              onClick={() => setMode('subscribe')}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
+                mode === 'subscribe'
+                  ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <Calendar className="h-3.5 w-3.5" />
+              Subscribe
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('pay')}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
+                mode === 'pay'
+                  ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <Send className="h-3.5 w-3.5" />
+              Pay Once
+            </button>
+          </div>
+        )}
 
-        {mode === 'token' && (
+        {mode === 'pay' && (
+          <div className="flex gap-1 rounded-xl border border-white/10 bg-gray-900/50 p-1">
+            <button
+              type="button"
+              onClick={() => setPayType('eth')}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
+                payType === 'eth'
+                  ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <Send className="h-3.5 w-3.5" />
+              ETH
+            </button>
+            <button
+              type="button"
+              onClick={() => setPayType('token')}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
+                payType === 'token'
+                  ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <Coins className="h-3.5 w-3.5" />
+              ERC-20
+            </button>
+          </div>
+        )}
+
+        {mode === 'pay' && payType === 'token' && (
           <div>
             <label className="mb-2 block text-xs font-medium text-gray-400">
               Token Address
@@ -158,7 +249,7 @@ export default function PaySplitter({ wallet }: Props) {
 
         <div>
           <label className="mb-2 block text-xs font-medium text-gray-400">
-            Amount {mode === 'eth' ? `(${NETWORK.currencySymbol})` : ''}
+            Amount {mode === 'subscribe' ? `(${NETWORK.currencySymbol} — sent as subscription fee)` : `(${NETWORK.currencySymbol})`}
           </label>
           <input
             type="number"
@@ -195,16 +286,19 @@ export default function PaySplitter({ wallet }: Props) {
         )}
 
         {success && (
-          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
-            Payment sent and distributed! Transaction{' '}
-            <a
-              href={`${NETWORK.explorerUrl}/tx/${success}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-mono text-emerald-400 hover:underline"
-            >
-              {shortAddress(success)}
-            </a>
+          <div className="flex items-start gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3">
+            <CheckCircle2 className="mt-0.5 h-4 w-4 flex-shrink-0 text-emerald-400" />
+            <p className="text-sm text-emerald-300">
+              {mode === 'subscribe' ? 'Subscription activated!' : 'Payment sent and distributed!'} Transaction{' '}
+              <a
+                href={`${NETWORK.explorerUrl}/tx/${success}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-mono text-emerald-400 hover:underline"
+              >
+                {shortAddress(success)}
+              </a>
+            </p>
           </div>
         )}
 
@@ -216,12 +310,25 @@ export default function PaySplitter({ wallet }: Props) {
           {sending ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" />
-              {mode === 'eth' ? 'Sending...' : 'Approving & Sending...'}
+              {mode === 'subscribe'
+                ? 'Subscribing...'
+                : payType === 'eth' ? 'Sending...' : 'Approving & Sending...'}
             </>
           ) : (
             <>
-              <Send className="h-4 w-4" />
-              {mode === 'eth' ? `Send ${amount || '0'} ${NETWORK.currencySymbol}` : 'Approve & Pay'}
+              {mode === 'subscribe' ? (
+                <>
+                  <Calendar className="h-4 w-4" />
+                  Subscribe
+                </>
+              ) : (
+                <>
+                  <Send className="h-4 w-4" />
+                  {payType === 'eth'
+                    ? `Send ${amount || '0'} ${NETWORK.currencySymbol}`
+                    : 'Approve & Pay'}
+                </>
+              )}
             </>
           )}
         </button>

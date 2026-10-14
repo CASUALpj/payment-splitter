@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Loader2, Inbox, ChevronRight, RefreshCw } from 'lucide-react';
+import { Loader2, Inbox, ChevronRight, RefreshCw, Calendar, Zap } from 'lucide-react';
 import type { WalletConnection } from '@/lib/wallet';
-import { fetchOwnedSplitters } from '@/lib/splitter';
+import { fetchOwnedSplitters, fetchSubscriptionInfo } from '@/lib/splitter';
 import { FACTORY_ADDRESS, shortAddress, explorerAddress } from '@/lib/config';
 import SplitterDetail from './SplitterDetail';
 
@@ -10,20 +10,30 @@ interface Props {
   refreshKey: number;
 }
 
+interface SplitterListItem {
+  address: string;
+  isSubscription: boolean;
+  durationDays: number;
+}
+
 export default function MySplitters({ wallet, refreshKey }: Props) {
   const [loading, setLoading] = useState(false);
-  const [addresses, setAddresses] = useState<string[]>([]);
+  const [items, setItems] = useState<SplitterListItem[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loaded, setLoaded] = useState(false);
 
   async function load() {
     setLoading(true);
     setError(null);
     try {
       const addrs = await fetchOwnedSplitters(wallet.address, wallet.provider, FACTORY_ADDRESS);
-      setAddresses(addrs);
-      setLoaded(true);
+      const details = await Promise.all(
+        addrs.map(async (addr) => {
+          const info = await fetchSubscriptionInfo(addr, wallet.provider);
+          return { address: addr, isSubscription: info.isSubscription, durationDays: info.durationDays };
+        })
+      );
+      setItems(details);
     } catch (err: any) {
       setError(err.message || 'Failed to load splitters.');
     } finally {
@@ -33,7 +43,6 @@ export default function MySplitters({ wallet, refreshKey }: Props) {
 
   useEffect(() => {
     if (wallet.address && wallet.provider) {
-      setLoaded(false);
       load();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -75,7 +84,7 @@ export default function MySplitters({ wallet, refreshKey }: Props) {
         </div>
       )}
 
-      {!loading && !error && addresses.length === 0 && (
+      {!loading && !error && items.length === 0 && (
         <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-white/10 py-20 text-center">
           <Inbox className="h-10 w-10 text-gray-600" />
           <div>
@@ -87,25 +96,44 @@ export default function MySplitters({ wallet, refreshKey }: Props) {
         </div>
       )}
 
-      {!loading && !error && addresses.length > 0 && (
+      {!loading && !error && items.length > 0 && (
         <div className="space-y-3">
-          {addresses.map((addr) => (
+          {items.map((item) => (
             <button
-              key={addr}
-              onClick={() => setSelected(addr)}
+              key={item.address}
+              onClick={() => setSelected(item.address)}
               className="group flex w-full items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] p-5 text-left transition-all hover:border-emerald-500/30 hover:bg-white/[0.05]"
             >
               <div className="min-w-0 flex-1">
-                <span
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    window.open(explorerAddress(addr), '_blank');
-                  }}
-                  className="font-mono text-sm font-medium text-white group-hover:text-emerald-400"
-                >
-                  {shortAddress(addr)}
-                </span>
-                <p className="mt-1 text-xs text-gray-600">{addr}</p>
+                <div className="flex items-center gap-2">
+                  <span
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      window.open(explorerAddress(item.address), '_blank');
+                    }}
+                    className="font-mono text-sm font-medium text-white group-hover:text-emerald-400"
+                  >
+                    {shortAddress(item.address)}
+                  </span>
+                  <span className={`flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-semibold ${
+                    item.isSubscription
+                      ? 'bg-emerald-500/15 text-emerald-400'
+                      : 'bg-sky-500/15 text-sky-400'
+                  }`}>
+                    {item.isSubscription ? (
+                      <>
+                        <Calendar className="h-2.5 w-2.5" />
+                        {item.durationDays}d sub
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="h-2.5 w-2.5" />
+                        one-time
+                      </>
+                    )}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-gray-600">{item.address}</p>
               </div>
               <ChevronRight className="h-5 w-5 flex-shrink-0 text-gray-600 transition-all group-hover:translate-x-1 group-hover:text-emerald-400" />
             </button>

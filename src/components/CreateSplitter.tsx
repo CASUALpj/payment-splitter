@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Plus, Trash2, Loader2, CheckCircle2, AlertCircle, Users } from 'lucide-react';
+import { Plus, Trash2, Loader2, CheckCircle2, AlertCircle, Users, Calendar, Zap } from 'lucide-react';
 import type { WalletConnection } from '@/lib/wallet';
 import { getFactoryContract } from '@/lib/wallet';
 import { NETWORK, shortAddress, explorerAddress } from '@/lib/config';
@@ -14,12 +14,16 @@ interface Row {
   pct: string;
 }
 
+type SplitterType = 'one-time' | 'subscription';
+
 function emptyRow(): Row {
   return { address: '', pct: '' };
 }
 
 export default function CreateSplitter({ wallet, onCreated }: Props) {
   const [rows, setRows] = useState<Row[]>([emptyRow(), emptyRow()]);
+  const [splitterType, setSplitterType] = useState<SplitterType>('one-time');
+  const [durationDays, setDurationDays] = useState('30');
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<{ addr: string; tx: string } | null>(null);
@@ -60,10 +64,19 @@ export default function CreateSplitter({ wallet, onCreated }: Props) {
 
     const sharesBps = rows.map((r) => Math.round(parseFloat(r.pct) * 100));
 
+    let subDays = 0;
+    if (splitterType === 'subscription') {
+      subDays = parseInt(durationDays, 10);
+      if (!subDays || subDays <= 0) {
+        setError('Subscription duration must be at least 1 day.');
+        return;
+      }
+    }
+
     setCreating(true);
     try {
       const factory = getFactoryContract(wallet.signer);
-      const tx = await factory.createSplitter(addrs, sharesBps);
+      const tx = await factory.createSplitter(addrs, sharesBps, subDays);
       const receipt = await tx.wait();
 
       const event = receipt?.logs
@@ -95,10 +108,81 @@ export default function CreateSplitter({ wallet, onCreated }: Props) {
           Create a Payment Splitter
         </h2>
         <p className="mt-1 text-sm text-gray-400">
-          Deploy a new on-chain splitter. Add recipients and their percentage split — funds sent to
-          the contract are distributed proportionally. You own the splitter and can edit it anytime.
+          Deploy a new on-chain splitter. Add recipients and their percentage split. Choose between a
+          one-time payment splitter or a subscription-based one with a recurring billing cycle.
         </p>
       </div>
+
+      <div className="mb-6">
+        <label className="mb-2 block text-xs font-medium text-gray-400">Splitter Type</label>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => setSplitterType('one-time')}
+            className={`flex items-center gap-3 rounded-xl border p-4 text-left transition-all ${
+              splitterType === 'one-time'
+                ? 'border-emerald-500/50 bg-emerald-500/10'
+                : 'border-white/10 bg-white/[0.02] hover:border-white/20'
+            }`}
+          >
+            <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${
+              splitterType === 'one-time' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/5 text-gray-500'
+            }`}>
+              <Zap className="h-5 w-5" />
+            </div>
+            <div>
+              <p className={`text-sm font-semibold ${splitterType === 'one-time' ? 'text-white' : 'text-gray-400'}`}>
+                One-Time
+              </p>
+              <p className="text-xs text-gray-500">Pay once, distribute instantly</p>
+            </div>
+          </button>
+          <button
+            type="button"
+            onClick={() => setSplitterType('subscription')}
+            className={`flex items-center gap-3 rounded-xl border p-4 text-left transition-all ${
+              splitterType === 'subscription'
+                ? 'border-emerald-500/50 bg-emerald-500/10'
+                : 'border-white/10 bg-white/[0.02] hover:border-white/20'
+            }`}
+          >
+            <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${
+              splitterType === 'subscription' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/5 text-gray-500'
+            }`}>
+              <Calendar className="h-5 w-5" />
+            </div>
+            <div>
+              <p className={`text-sm font-semibold ${splitterType === 'subscription' ? 'text-white' : 'text-gray-400'}`}>
+                Subscription
+              </p>
+              <p className="text-xs text-gray-500">Recurring billing cycle</p>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      {splitterType === 'subscription' && (
+        <div className="mb-6 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+          <label className="mb-2 block text-xs font-medium text-emerald-300">
+            Subscription Duration (days)
+          </label>
+          <div className="flex items-center gap-3">
+            <input
+              type="number"
+              min="1"
+              max="365"
+              placeholder="30"
+              value={durationDays}
+              onChange={(e) => setDurationDays(e.target.value)}
+              className="w-32 rounded-lg border border-white/10 bg-gray-900/50 px-3 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-emerald-500/50"
+            />
+            <span className="text-sm text-gray-500">days per billing cycle</span>
+          </div>
+          <p className="mt-2 text-xs text-gray-500">
+            Subscribers pay ETH to subscribe and get access for this many days. They can renew anytime.
+          </p>
+        </div>
+      )}
 
       <div className="space-y-4">
         {rows.map((row, i) => (
@@ -157,13 +241,13 @@ export default function CreateSplitter({ wallet, onCreated }: Props) {
               : total > 0
                 ? 'border-amber-500/30 bg-amber-500/5'
                 : 'border-white/10 bg-white/[0.02]'
-          }`
+          }`}
         >
           <span className="text-sm font-medium text-gray-400">Total allocated</span>
           <span
             className={`font-mono text-sm font-bold ${
               balanced ? 'text-emerald-400' : total > 0 ? 'text-amber-400' : 'text-gray-500'
-            }`
+            }`}
           >
             {total.toFixed(2)}%
           </span>
