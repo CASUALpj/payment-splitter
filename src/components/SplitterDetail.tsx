@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Loader2, ArrowLeft, ExternalLink, Users, Pencil, Save, X, Wallet, Coins } from 'lucide-react';
+import {
+  Loader2, ArrowLeft, ExternalLink, Users, Pencil, Save, X, Wallet, Coins,
+  Calendar, Clock, CheckCircle2, Zap, AlertCircle,
+} from 'lucide-react';
 import type { WalletConnection } from '@/lib/wallet';
-import { getSplitterContract, getSplitterReadOnly } from '@/lib/wallet';
-import { formatEther } from '@/lib/wallet';
-import { shortAddress, explorerAddress, ZERO_ADDRESS } from '@/lib/config';
+import { getSplitterContract, getSplitterReadOnly, formatEther } from '@/lib/wallet';
+import { shortAddress, explorerAddress, ZERO_ADDRESS, NETWORK } from '@/lib/config';
+import { formatExpiry } from '@/lib/splitter';
 
 interface Props {
   splitterAddress: string;
@@ -29,7 +32,12 @@ export default function SplitterDetail({ splitterAddress, wallet, onBack }: Prop
   const [ethBalance, setEthBalance] = useState<bigint | null>(null);
   const [tokenAddress, setTokenAddress] = useState('');
   const [tokenBalance, setTokenBalance] = useState<bigint | null>(null);
+  const [subDurationDays, setSubDurationDays] = useState(0);
+  const [subscribed, setSubscribed] = useState(false);
+  const [subExpiry, setSubExpiry] = useState(0);
+  const [editDuration, setEditDuration] = useState('');
 
+  const isSubscription = subDurationDays > 0;
   const isOwner =
     wallet.address && owner && wallet.address.toLowerCase() === owner.toLowerCase();
 
@@ -38,14 +46,26 @@ export default function SplitterDetail({ splitterAddress, wallet, onBack }: Prop
     setError(null);
     try {
       const c = getSplitterReadOnly(splitterAddress, wallet.provider);
-      const [recips, bps] = await c.getRecipients() as [string[], bigint[]];
-      const own = await c.owner() as string;
-      setRecipients(recips);
-      setShares(bps.map((b) => Number(b)));
-      setOwner(own);
-      setEditRows(recips.map((r, i) => ({ address: r, pct: (Number(bps[i]) / 100).toString() })));
+      const [recipsResult, own2, subDays2, isSub2, subExp2, bal] = await Promise.all([
+        c.getRecipients() as Promise<[string[], bigint[]]>,
+        c.owner() as Promise<string>,
+        c.subscriptionDurationDays() as Promise<bigint>,
+        c.isSubscribed(wallet.address) as Promise<boolean>,
+        c.subscriptionExpiry(wallet.address) as Promise<bigint>,
+        c.balances(ZERO_ADDRESS, wallet.address) as Promise<bigint>,
+      ]);
 
-      const bal = await c.balances(ZERO_ADDRESS, wallet.address) as bigint;
+      const recips = recipsResult[0];
+      const bps = recipsResult[1];
+
+      setRecipients(recips);
+      setShares(bps.map((b: bigint) => Number(b)));
+      setOwner(own2);
+      setEditRows(recips.map((r: string, i: number) => ({ address: r, pct: (Number(bps[i]) / 100).toString() })));
+      setSubDurationDays(Number(subDays2));
+      setEditDuration(Number(subDays2).toString());
+      setSubscribed(Boolean(isSub2));
+      setSubExpiry(Number(subExp2));
       setEthBalance(bal);
     } catch (err: any) {
       setError('Could not load splitter data. Wrong network or address?');
@@ -101,6 +121,27 @@ export default function SplitterDetail({ splitterAddress, wallet, onBack }: Prop
       await load();
     } catch (err: any) {
       setError(err.shortMessage || err.message || 'Transaction failed.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function updateSubscriptionDuration() {
+    const days = parseInt(editDuration, 10);
+    if (!days || days <= 0) {
+      setError('Duration must be at least 1 day.');
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const c = getSplitterContract(splitterAddress, wallet.signer);
+      const tx = await c.setSubscriptionDuration(days);
+      await tx.wait();
+      setSuccess('Subscription duration updated.');
+      await load();
+    } catch (err: any) {
+      setError(err.shortMessage || err.message || 'Failed to update duration.');
     } finally {
       setSubmitting(false);
     }
@@ -173,10 +214,24 @@ export default function SplitterDetail({ splitterAddress, wallet, onBack }: Prop
         Back to list
       </button>
 
+      {/* Header card */}
       <div className="mb-6 rounded-2xl border border-white/10 bg-white/[0.03] p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h2 className="text-xl font-bold text-white">Splitter Details</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-bold text-white">Splitter Details</h2>
+              <span className={`flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-semibold ${
+                isSubscription
+                  ? 'bg-emerald-500/15 text-emerald-400'
+                  : 'bg-sky-500/15 text-sky-400'
+              }`}>
+                {isSubscription ? (
+                  <><Calendar className="h-2.5 w-2.5" /> Subscription</>
+                ) : (
+                  <><Zap className="h-2.5 w-2.5" /> One-time</>
+                )}
+              </span>
+            </div>
             <a
               href={explorerAddress(splitterAddress)}
               target="_blank"
@@ -201,6 +256,56 @@ export default function SplitterDetail({ splitterAddress, wallet, onBack }: Prop
         </div>
       </div>
 
+      {/* Subscription info */}
+      {isSubscription && (
+        <div className="mb-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-5">
+          <div className="flex items-center gap-2">
+            <Calendar className="h-4 w-4 text-emerald-400" />
+            <h3 className="text-sm font-semibold text-white">Subscription Info</h3>
+          </div>
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="rounded-lg border border-white/5 bg-white/[0.02] p-3">
+              <p className="text-xs text-gray-500">Billing Cycle</p>
+              <p className="mt-1 font-mono text-sm font-semibold text-emerald-400">{subDurationDays} days</p>
+            </div>
+            <div className="rounded-lg border border-white/5 bg-white/[0.02] p-3">
+              <p className="text-xs text-gray-500">Your Status</p>
+              <p className={`mt-1 flex items-center gap-1 text-sm font-semibold ${subscribed ? 'text-emerald-400' : 'text-gray-500'}`}>
+                {subscribed ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Clock className="h-3.5 w-3.5" />}
+                {subscribed ? 'Active' : 'Not subscribed'}
+              </p>
+            </div>
+            <div className="rounded-lg border border-white/5 bg-white/[0.02] p-3">
+              <p className="text-xs text-gray-500">Expiry</p>
+              <p className="mt-1 text-sm font-semibold text-white">
+                {subscribed ? formatExpiry(subExpiry) : '—'}
+              </p>
+            </div>
+          </div>
+          {isOwner && (
+            <div className="mt-4 flex items-center gap-2 border-t border-white/5 pt-4">
+              <input
+                type="number"
+                min="1"
+                max="365"
+                value={editDuration}
+                onChange={(e) => setEditDuration(e.target.value)}
+                className="w-24 rounded-lg border border-white/10 bg-gray-900/50 px-3 py-2 text-sm text-white outline-none focus:border-emerald-500/50"
+              />
+              <span className="text-xs text-gray-500">days</span>
+              <button
+                onClick={updateSubscriptionDuration}
+                disabled={submitting}
+                className="rounded-lg bg-emerald-500/15 px-3 py-2 text-xs font-semibold text-emerald-400 transition-all hover:bg-emerald-500/25 active:scale-95 disabled:opacity-50"
+              >
+                Update Duration
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Recipients table / edit mode */}
       <div className="overflow-hidden rounded-2xl border border-white/10">
         <div className="flex items-center justify-between border-b border-white/10 bg-white/[0.02] px-5 py-3">
           <div className="flex items-center gap-2">
@@ -319,6 +424,7 @@ export default function SplitterDetail({ splitterAddress, wallet, onBack }: Prop
         )}
       </div>
 
+      {/* Withdrawal section */}
       <div className="mt-6 space-y-4 rounded-2xl border border-white/10 bg-white/[0.03] p-5">
         <div className="flex items-center gap-2">
           <Wallet className="h-4 w-4 text-gray-400" />
@@ -376,13 +482,15 @@ export default function SplitterDetail({ splitterAddress, wallet, onBack }: Prop
       </div>
 
       {error && (
-        <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-          {error}
+        <div className="mt-4 flex items-start gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3">
+          <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-400" />
+          <p className="text-sm text-red-300">{error}</p>
         </div>
       )}
 
       {success && (
-        <div className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+        <div className="mt-4 flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+          <CheckCircle2 className="h-4 w-4" />
           {success}
         </div>
       )}
