@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, LayoutGrid, Send, Github, BookOpen } from 'lucide-react';
+import { Plus, LayoutGrid, Send, Github, BookOpen, Calendar, Zap } from 'lucide-react';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import ConnectWallet from '@/components/ConnectWallet';
 import CreateSplitter from '@/components/CreateSplitter';
@@ -141,8 +141,8 @@ function Hero({ onConnect, connecting }: { onConnect: () => void; connecting: bo
         </span>
       </h2>
       <p className="mt-5 max-w-lg text-sm text-gray-400 sm:text-base">
-        Create a payment splitter contract, add payees with custom share weights, and distribute
-        funds proportionally — all settled on {NETWORK.name}.
+        Create one-time or subscription-based payment splitters. Add payees with custom share weights,
+        distribute funds proportionally — all settled on {NETWORK.name}.
       </p>
       <button
         onClick={onConnect}
@@ -161,16 +161,28 @@ function Hero({ onConnect, connecting }: { onConnect: () => void; connecting: bo
 
       <div className="mt-16 grid grid-cols-1 gap-4 sm:grid-cols-3">
         {[
-          { title: 'Deploy', desc: 'Create a splitter with any number of payees and share weights.' },
-          { title: 'Manage', desc: 'View balances, track distributions, and release funds to payees.' },
-          { title: 'Pay', desc: 'Send ETH to any splitter — it routes proportionally to all payees.' },
+          {
+            icon: Zap,
+            title: 'One-Time Payments',
+            desc: 'Create a splitter, add payees with share weights, and pay in — funds route proportionally.',
+          },
+          {
+            icon: Calendar,
+            title: 'Subscriptions',
+            desc: 'Set a billing cycle in days. Subscribers pay to activate and renew their access period.',
+          },
+          {
+            icon: LayoutGrid,
+            title: 'Manage',
+            desc: 'View balances, edit distributions, update subscription duration, and withdraw earnings.',
+          },
         ].map((f, i) => (
           <div
             key={i}
             className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 text-left"
           >
-            <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/15 text-xs font-bold text-emerald-400">
-              {i + 1}
+            <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-400">
+              <f.icon className="h-4.5 w-4.5" />
             </div>
             <h3 className="text-sm font-semibold text-white">{f.title}</h3>
             <p className="mt-1 text-xs text-gray-500">{f.desc}</p>

@@ -1,4 +1,4 @@
-import { BrowserProvider, Contract, formatEther, parseEther } from 'ethers';
+import { Contract, BrowserProvider, formatEther } from 'ethers';
 import { FACTORY_ADDRESS, FACTORY_ABI, SPLITTER_ABI, ERC20_ABI, NETWORK } from './config';
 
 export interface WalletConnection {
@@ -67,4 +67,4 @@ export function getErc20ReadOnly(address: string, provider: BrowserProvider) {
   return new Contract(address, ERC20_ABI, provider);
 }
 
-export { formatEther, parseEther };
+export { formatEther };
