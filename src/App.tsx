@@ -43,11 +43,13 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
+      {/* Background glow */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
         <div className="absolute -top-40 left-1/4 h-96 w-96 rounded-full bg-emerald-500/10 blur-[120px]" />
         <div className="absolute top-1/2 right-0 h-96 w-96 rounded-full bg-teal-500/5 blur-[120px]" />
       </div>
 
+      {/* Header */}
       <header className="sticky top-0 z-50 border-b border-white/5 bg-gray-950/80 backdrop-blur-xl">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
           <div className="flex items-center gap-2.5">
@@ -73,11 +75,13 @@ export default function App() {
         </div>
       </header>
 
+      {/* Main */}
       <main className="relative z-10 mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-12">
         {!wallet ? (
           <Hero onConnect={handleConnect} connecting={connecting} />
         ) : (
           <>
+            {/* Tabs */}
             <div className="mb-8 flex gap-1 rounded-2xl border border-white/10 bg-white/[0.02] p-1.5">
               {TABS.map((t) => {
                 const Icon = t.icon;
@@ -99,6 +103,7 @@ export default function App() {
               })}
             </div>
 
+            {/* Tab content */}
             <div className="mt-2">
               <ErrorBoundary key={tab}>
                 {tab === 'create' && <CreateSplitter wallet={wallet} onCreated={handleCreated} />}
@@ -110,6 +115,7 @@ export default function App() {
         )}
       </main>
 
+      {/* Footer */}
       <footer className="relative z-10 border-t border-white/5 py-6">
         <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-2 px-4 text-xs text-gray-600 sm:flex-row sm:px-6">
           <p>Ledger — on-chain payment splitter for {NETWORK.name}</p>
