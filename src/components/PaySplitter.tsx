@@ -174,6 +174,7 @@ export default function PaySplitter({ wallet }: Props) {
           )}
         </div>
 
+        {/* Mode toggle - only show if splitter supports subscription */}
         {splitterInfo?.isSub && (
           <div className="flex gap-1 rounded-xl border border-white/10 bg-gray-900/50 p-1">
             <button
@@ -203,6 +204,7 @@ export default function PaySplitter({ wallet }: Props) {
           </div>
         )}
 
+        {/* Token type toggle for pay mode */}
         {mode === 'pay' && (
           <div className="flex gap-1 rounded-xl border border-white/10 bg-gray-900/50 p-1">
             <button

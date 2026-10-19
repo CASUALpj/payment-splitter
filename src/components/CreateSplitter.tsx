@@ -113,6 +113,7 @@ export default function CreateSplitter({ wallet, onCreated }: Props) {
         </p>
       </div>
 
+      {/* Splitter type toggle */}
       <div className="mb-6">
         <label className="mb-2 block text-xs font-medium text-gray-400">Splitter Type</label>
         <div className="grid grid-cols-2 gap-2">
@@ -161,6 +162,7 @@ export default function CreateSplitter({ wallet, onCreated }: Props) {
         </div>
       </div>
 
+      {/* Subscription duration */}
       {splitterType === 'subscription' && (
         <div className="mb-6 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
           <label className="mb-2 block text-xs font-medium text-emerald-300">
